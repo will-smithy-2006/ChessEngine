@@ -468,12 +468,14 @@ namespace ChessEngineNS
                     //      2. Is the current direction is DIAGONAL and is the piece a BISHOP.
                     //      3. Is the piece a QUEEN.
                     //      4. Is the piece a PAWN and is it ADJACENT to the KING. Is the pawn behind the king (perspectively).
+                    //      5. Is the piece a KING and is it ADJACENT to the KING.
 
                     if(orthogonal && Piece.IsRook(board[endSquare]) || 
                         !orthogonal && Piece.IsBishop(board[endSquare]) || 
                         Piece.IsQueen(board[endSquare]) || 
                         !orthogonal && Piece.IsPawn(board[endSquare]) && Board.AreAdjacentFiles(endSquare, kingPosition) &&
-                        (Piece.IsWhite(board[endSquare]) && endSquare < kingPosition || Piece.IsBlack(board[endSquare]) && endSquare > kingPosition))
+                        (Piece.IsWhite(board[endSquare]) && endSquare < kingPosition || Piece.IsBlack(board[endSquare]) && endSquare > kingPosition) ||
+                        (Piece.IsKing(board[endSquare]) && Board.AreAdjacent(kingPosition, endSquare))) 
                     {
 
                         // If there is not a pinned piece, then this threat is considered a check. Otherwise it is a pin.

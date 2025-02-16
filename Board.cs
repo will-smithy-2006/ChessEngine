@@ -304,7 +304,7 @@ namespace ChessEngineNS
 
         public bool MakeComputerMove()
         {
-            (int, int) selection = selector.MiniMaxMoveEvaluation(this, 4, int.MinValue, int.MaxValue);
+            (int, int) selection = selector.MiniMaxMoveEvaluation(this, 10, int.MinValue, int.MaxValue);
 
             if (selection.Item2 == -1)
                 return false;
@@ -363,6 +363,11 @@ namespace ChessEngineNS
         public static bool AreAdjacentRanks(int square, int otherSquare)
         {
             return Math.Abs(Rank(square) - Rank(otherSquare)) == 1;
+        }
+
+        public static bool AreAdjacent(int square, int otherSquare)
+        {
+            return AreAdjacentFiles(square, otherSquare) || AreAdjacentRanks(square, otherSquare);
         }
 
         public static bool SameDiagonal(int square, int otherSquare)
