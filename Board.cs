@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ChessEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Metadata;
@@ -9,6 +10,7 @@ namespace ChessEngineNS
 {
     public class Board
     {
+        // Default starting position fen string.
         public const string DEFAULT_FEN_STRING = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w";
 
         // Keep track of king positions for easier check and pin detection.
@@ -16,26 +18,38 @@ namespace ChessEngineNS
         public int[] Kings => kings;
         private int[] kings;
 
+        // These two booleans indicate whether the player is competing against another human player or against a computer. 
         public bool IsPlayingComputer { get { return playingComputer; } }
         private bool playingComputer;
+
+        // This boolean indicates if white is the current colour to play.
         public bool whiteToPlay;
 
+        // This array of integers represents the current board state. Each element in the array represents a square of the board
+        // and the particular piece that resides upon it, which is defined by the value within the piece class.
         public int this[int i] { get { return board[i]; } }
         private int[] board;
 
+        // This stack tracks all the moves that have been made in a game, since stacks are a LIFO data structure, the top of the stack
+        // is the move most recently made, and the bottom is the first move made.
         private Stack<Move> moveStack;
-        private MoveGenerator moveGenerator;
-        private Evaluator evaluator;
 
+        // These are instances of the Move Generator and Move Selector classes that are used throughout this class, for their own purposes.
+        private MoveGenerator moveGenerator;
+        private MoveSelector selector;
+
+        // This boolean indicates whether a state of checkmate is present.
         public bool Checkmate => checkmate;
         private bool checkmate;
 
 
+        // The class constructor initialises all the variables above, with the board being set up as defined in the FEN String.
         public Board(string fenString = DEFAULT_FEN_STRING, bool playingComputer = false)
         {
             board = GenerateBoardFromFENString(fenString);
             kings = new int[2];
 
+            // Locate and record the King positions.
             for (int i = 0; i < 64; i++)
             {
                 if (Piece.IsKing(board[i]))
@@ -49,13 +63,15 @@ namespace ChessEngineNS
 
             moveGenerator = new MoveGenerator(this);
             moveStack = new Stack<Move>();
-            evaluator = new Evaluator();
+            selector = new MoveSelector();
 
             checkmate = false;
             this.playingComputer = playingComputer;
         }
 
-        public int[] GenerateBoardFromFENString(string fenString)
+        // This function takes a FEN string defining the board layout and populates an integer array representing the squares on the board.
+        // Furthermore, the function also determines the colour to play as per the FEN string.
+        private int[] GenerateBoardFromFENString(string fenString)
         {
             string[] fenStringParts = fenString.Split(' ');
             int[] board = new int[64];
@@ -113,17 +129,101 @@ namespace ChessEngineNS
             return board;
         }
 
-        // Returns true if move is successful, returns false otherwise. (e.g. move is invalid)
-        public bool MakeMove(Move move)
+        // This function takes an integer array representing all the squares on the board, and generates its corresponding FEN string.
+        public string GenerateFENStringFromBoard(int[] board)
         {
+            string fenString = "";
+
+            for (int rank = 7; rank >= 0; rank--)
+            {
+                int emptySquares = 0;
+
+                for (int file = 0; file < 8; file++)
+                {
+                    int piece = board[FileRankToSquare(file, rank)];
+
+                    if (piece == Piece.Empty)
+                    {
+                        emptySquares++;
+
+                        if (file == 7)
+                        {
+                            fenString += emptySquares.ToString();
+                            emptySquares = 0;
+                        }
+
+                        continue;
+                    }
+
+                    if (emptySquares != 0)
+                    {
+                        fenString += emptySquares.ToString();
+                        emptySquares = 0;
+                    }
+
+                    string ch = "";
+
+                    switch(piece & Piece.Type)
+                    {
+                        case Piece.Pawn:
+                            ch = "p";
+                            break;
+                        case Piece.Knight:
+                            ch = "n";
+                            break;
+                        case Piece.Bishop:
+                            ch = "b";
+                            break;
+                        case Piece.Rook:
+                            ch = "r";
+                            break;
+                        case Piece.Queen:
+                            ch = "q";
+                            break;
+                        case Piece.King:
+                            ch = "k";
+                            break;
+                        default:
+                            throw new InvalidDataException($"({piece & Piece.Type} is not a valid Piece Type");
+
+                    }
+
+                    if (Piece.IsWhite(piece))
+                    {
+                        ch = ch.ToUpper();
+                    }
+
+                    fenString += ch;
+                }
+                
+                if (rank != 0)
+                {
+                    fenString += "/";
+                }
+            }
+
+            fenString += ColourToPlay() == Piece.White ? " w" : " b";
+            return fenString;
+        }
+
+        // This function takes a move object, and applies it to the board, updating any relevant board information, and ensuring that there is not an error
+        // while carrying out said move. The function will return true if the move was made successfully. This function takes a boolean value that when true
+        // indicates the move provided is only being assessed to establish it legality (within other functions).
+        public bool MakeMove(Move move, bool testMove = false)
+        {
+            // Create a variable and assign the piece that is moving on the board (for readability).
             int movingPiece = board[move.StartingSquare];
             
+            // If the moving piece is an empty square, the move is invalid so return false.
             if (movingPiece == Piece.Empty)
                 return false;
 
+            // Set the starting square of the move to be empty, and the end square to be the moving piece.
+            // This automatically captures a piece if one resides on the end square.
             board[move.StartingSquare] = Piece.Empty;
             board[move.EndingSquare] = movingPiece;
 
+            // If the moving piece is a king, then the king position variable is updated accordingly.
             if (Piece.IsKing(movingPiece))
             {
                 if (Piece.IsWhite(movingPiece))
@@ -136,39 +236,54 @@ namespace ChessEngineNS
                 }
             }
 
+
+            // Switch the colour to play.
             whiteToPlay = !whiteToPlay;
 
-            if (Piece.IsKing(movingPiece)) // A King move cannot put the opposition king into check, or cause checkmate.
+            // If the current move has been marked as a "test move" then the move will be pushed stack
+            // and exit the function before looking for checkmate, to avoid recursive calling of this function. 
+            if (testMove) 
             {
                 moveStack.Push(move);
                 return true;
             }
 
-            CheckState checkState = moveGenerator.DetectPinsAndCheck(board, ColourToPlay()); // Since kings cannot cause checks, there is no need to update the king position, within the move generator.
+            // Look for checks and pins on the (now) playing king.
+            CheckState checkState = moveGenerator.DetectPinsAndCheck(board, ColourToPlay()); 
 
+            // If a check is present update move flag, and look for checkmate.
             if (checkState.NumOfChecks > 0)
             {
+                // Generate a list of all legal moves on the board.
                 List<Move> LegalMoves = moveGenerator.GenerateAllLegalMoves(this);
 
+                // If there are no legal moves, then checkmate must be present.
                 if (LegalMoves.Count == 0)
                 {
                     checkmate = true;
+                    move.AddFlag(Move.CheckmateFlag);
                 }
 
                 move.AddFlag(Move.CheckFlag);
             }
 
+            // Push the provided move, onto the move stack.
             moveStack.Push(move);
             return true;
         }
 
+        // The purpose of this function is to "undo" the most recently made move on the board. 
+        // The function will return true if the move was successfully unmade.
         public bool UnmakeMove()
         {
+            // If the move stack is empty, return false, since there are no moves to unmake.
             if (moveStack.Count == 0) return false;
 
+            // Pop the most recent move from the move stack, and switch the colour to play.
             Move move = moveStack.Pop();
             whiteToPlay = !whiteToPlay;
 
+            // If the moving piece is a king, update king position accordingly.
             if (Piece.IsKing(board[move.EndingSquare]))
             {
                 if (Piece.IsWhite(board[move.EndingSquare]))
@@ -177,23 +292,26 @@ namespace ChessEngineNS
                     kings[1] = move.StartingSquare;
             }
 
+            // Set the moving piece back to it's starting position, and replace any captured pieces, as indicated in the move object.
             board[move.StartingSquare] = board[move.EndingSquare];
             board[move.EndingSquare] = move.Captured;
+
+            // Set checkmate to be false, no need to look if the move caused checkmate, since no moves may be made after checkmate has occurred.
+            checkmate = false;
 
             return true;
         }
 
         public bool MakeComputerMove()
         {
-            (int, int) evaluation = evaluator.MiniMaxMoveEvaluation(this, 2, int.MinValue, int.MaxValue);
-            //MessageBox.Show(evaluation.Item1.ToString());
+            (int, int) selection = selector.MiniMaxMoveEvaluation(this, 4, int.MinValue, int.MaxValue);
 
-            if (evaluation.Item2 == -1)
+            if (selection.Item2 == -1)
                 return false;
 
             List<Move> moves = moveGenerator.GenerateAllLegalMoves(this);
 
-            return MakeMove(moves[evaluation.Item2]);
+            return MakeMove(moves[selection.Item2]);
         }
 
         public List<Move> GenerateValidMoves(int square)

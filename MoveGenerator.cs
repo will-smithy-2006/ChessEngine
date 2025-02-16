@@ -314,11 +314,13 @@ namespace ChessEngineNS
                     continue;
                 }
 
+                // The purpose of this block of code is to ensure that the current move, would not put the moving king into check, 
+                // as this is an illegal move.
                 if ((board[endSquare] & Piece.Colour) == opponentColour || board[endSquare] == Piece.Empty)
                 {
                     Move move = new Move(kingPosition, endSquare, board[endSquare]);
 
-                    this.board.MakeMove(move);
+                    this.board.MakeMove(move, testMove: true);
                     kingPosition = endSquare;
 
                     if (DetectPinsAndCheck(this.board.GetBoard(), friendlyColour).NumOfChecks == 0)

@@ -26,6 +26,7 @@ namespace ChessEngineNS
         public int EndingSquare => endSquare;
 
         public int Captured => CapturedBitmask & flags;
+        public bool Checkmate => (CheckmateBitmask & flags) == CheckmateBitmask;
 
         public Move(int startingSquare, int endSquare, int flags = 0)
         {
