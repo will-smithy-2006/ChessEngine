@@ -5,31 +5,54 @@ using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ChessEngine
+namespace ChessEngineNS
 {
-    internal class Board
+    public class Board
     {
         public const string DEFAULT_FEN_STRING = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w";
 
-        int playerColour;
-        int computerColour;
+        // Keep track of king positions for easier check and pin detection.
+        // kings[0] = White, kings[1] = Black
+        public int[] Kings => kings;
+        private int[] kings;
 
-        public int FriendlyColour => playerColour;
-        public int OpponentColour => computerColour;
-
-        private MoveGenerator moveGenerator;
-
+        public bool IsPlayingComputer { get { return playingComputer; } }
+        private bool playingComputer;
         public bool whiteToPlay;
 
+        public int this[int i] { get { return board[i]; } }
         private int[] board;
-        public int this[int i] { get { return board[i]; } } 
+
+        private Stack<Move> moveStack;
+        private MoveGenerator moveGenerator;
+        private Evaluator evaluator;
+
+        public bool Checkmate => checkmate;
+        private bool checkmate;
 
 
-
-        public Board(string fenString = DEFAULT_FEN_STRING)
+        public Board(string fenString = DEFAULT_FEN_STRING, bool playingComputer = false)
         {
             board = GenerateBoardFromFENString(fenString);
+            kings = new int[2];
+
+            for (int i = 0; i < 64; i++)
+            {
+                if (Piece.IsKing(board[i]))
+                {
+                    if (Piece.IsWhite(board[i]))
+                        kings[0] = i;
+                    else
+                        kings[1] = i;
+                }
+            }
+
             moveGenerator = new MoveGenerator(this);
+            moveStack = new Stack<Move>();
+            evaluator = new Evaluator();
+
+            checkmate = false;
+            this.playingComputer = playingComputer;
         }
 
         public int[] GenerateBoardFromFENString(string fenString)
@@ -90,26 +113,6 @@ namespace ChessEngine
             return board;
         }
 
-        private PieceList[] GeneratePieceListFromBoard(int pieceType, int[] board)
-        {
-            PieceList[] pieces = new PieceList[]
-                {
-                    new PieceList(),
-                    new PieceList()
-                };
-
-            for (int i = 0; i < board.Length; i++)
-            {
-                if ((board[i] & Piece.Type) == pieceType)
-                {
-                    int colour = Piece.IsWhite(board[i]) ? 0 : 1;
-                    pieces[colour].AddPiece(i);
-                }
-            }
-
-            return pieces;
-        }
-
         // Returns true if move is successful, returns false otherwise. (e.g. move is invalid)
         public bool MakeMove(Move move)
         {
@@ -121,14 +124,86 @@ namespace ChessEngine
             board[move.StartingSquare] = Piece.Empty;
             board[move.EndingSquare] = movingPiece;
 
+            if (Piece.IsKing(movingPiece))
+            {
+                if (Piece.IsWhite(movingPiece))
+                {
+                    kings[0] = move.EndingSquare;
+                }
+                else
+                {
+                    kings[1] = move.EndingSquare;
+                }
+            }
+
             whiteToPlay = !whiteToPlay;
 
+            if (Piece.IsKing(movingPiece)) // A King move cannot put the opposition king into check, or cause checkmate.
+            {
+                moveStack.Push(move);
+                return true;
+            }
+
+            CheckState checkState = moveGenerator.DetectPinsAndCheck(board, ColourToPlay()); // Since kings cannot cause checks, there is no need to update the king position, within the move generator.
+
+            if (checkState.NumOfChecks > 0)
+            {
+                List<Move> LegalMoves = moveGenerator.GenerateAllLegalMoves(this);
+
+                if (LegalMoves.Count == 0)
+                {
+                    checkmate = true;
+                }
+
+                move.AddFlag(Move.CheckFlag);
+            }
+
+            moveStack.Push(move);
             return true;
+        }
+
+        public bool UnmakeMove()
+        {
+            if (moveStack.Count == 0) return false;
+
+            Move move = moveStack.Pop();
+            whiteToPlay = !whiteToPlay;
+
+            if (Piece.IsKing(board[move.EndingSquare]))
+            {
+                if (Piece.IsWhite(board[move.EndingSquare]))
+                    kings[0] = move.StartingSquare;
+                else
+                    kings[1] = move.StartingSquare;
+            }
+
+            board[move.StartingSquare] = board[move.EndingSquare];
+            board[move.EndingSquare] = move.Captured;
+
+            return true;
+        }
+
+        public bool MakeComputerMove()
+        {
+            (int, int) evaluation = evaluator.MiniMaxMoveEvaluation(this, 2, int.MinValue, int.MaxValue);
+            //MessageBox.Show(evaluation.Item1.ToString());
+
+            if (evaluation.Item2 == -1)
+                return false;
+
+            List<Move> moves = moveGenerator.GenerateAllLegalMoves(this);
+
+            return MakeMove(moves[evaluation.Item2]);
         }
 
         public List<Move> GenerateValidMoves(int square)
         {
             return moveGenerator.GenerateLegalMoves(square, this);
+        }
+
+        public CheckState DetectPinsAndChecks() // This is a test function and should not be used in any other capcity.
+        {
+            return moveGenerator.DetectPinsAndCheck(board, ColourToPlay());
         }
         public int ColourToPlay()
         {
@@ -170,6 +245,54 @@ namespace ChessEngine
         public static bool AreAdjacentRanks(int square, int otherSquare)
         {
             return Math.Abs(Rank(square) - Rank(otherSquare)) == 1;
+        }
+
+        public static bool SameDiagonal(int square, int otherSquare)
+        {
+            int squareDifference = Math.Abs(square - otherSquare);
+
+            if (squareDifference % 7 == 0 || squareDifference % 9 == 0)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        public static string SquareNumToName(int square)
+        {
+            string retString = "";
+
+            switch (File(square))
+            {
+                case 0:
+                    retString += "a";
+                    break;
+                case 1:
+                    retString += "b";
+                    break;
+                case 2:
+                    retString += "c";
+                    break;
+                case 3:
+                    retString += "d";
+                    break;
+                case 4:
+                    retString += "e";
+                    break;
+                case 5:
+                    retString += "f";
+                    break;
+                case 6:
+                    retString += "g";
+                    break;
+                case 7:
+                    retString += "h";
+                    break;
+            }
+
+            retString += $"{Rank(square) + 1}";
+            return retString;
         }
     }
 }

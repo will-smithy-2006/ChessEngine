@@ -1,4 +1,4 @@
-﻿namespace ChessEngine
+﻿namespace ChessEngineNS
 {
     partial class ChessForm
     {
@@ -34,7 +34,7 @@
             // 
             AutoScaleDimensions = new SizeF(8F, 20F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(641, 641);
             Name = "ChessForm";
             Text = "Chess";
             Load += ChessForm_Load;

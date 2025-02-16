@@ -10,17 +10,17 @@ using System.Windows.Forms;
 using System.Resources;
 using ChessEngine.Properties;
 
-namespace ChessEngine
+namespace ChessEngineNS
 {
     public partial class ChessForm : Form
     {
         private ResourceManager rm = Resources.ResourceManager;
 
-
         private Board board;
 
-        private int[] selectedSquares;
         private List<Move> currentMoves;
+        private int[] selectedSquares;
+
         private bool isPieceSelected;
 
 
@@ -28,7 +28,7 @@ namespace ChessEngine
         {
             InitializeComponent();
 
-            board = new Board("4k2r/6r1/8/8/8/8/3R4/R3K3 w");
+            board = new Board(playingComputer: true, fenString: "n1P4b/8/1P3p2/8/8/8/8/k6K w");
             selectedSquares = new int[1];
             isPieceSelected = false;
 
@@ -43,7 +43,7 @@ namespace ChessEngine
         private void ChessForm_MouseDown(object sender, MouseEventArgs e)
         {
             int file = e.X / 80;
-            int rank = board.whiteToPlay ? 7 - (e.Y / 80) : e.Y / 80;
+            int rank = 7 - (e.Y / 80);
             int square = Board.FileRankToSquare(file, rank);
             
             if(!isPieceSelected)
@@ -87,6 +87,16 @@ namespace ChessEngine
                     isPieceSelected = false;
                     Invalidate();
 
+                    if (board.IsPlayingComputer)
+                    {
+                        bool successfulComputerMove = board.MakeComputerMove();
+
+                        if (!successfulComputerMove)
+                            MessageBox.Show("Computer Move Failed");
+
+                        Invalidate();
+                    }
+
                     return;
                 }
             }
@@ -128,9 +138,9 @@ namespace ChessEngine
                 foreach (int square in selectedSquares)
                 {
                     int screenX = (Board.File(square) * 79) + Board.File(square);
-                    int screenY = board.whiteToPlay ? (7 - Board.Rank(square)) * 80 : Board.Rank(square) * 80;
+                    int screenY = (7 - Board.Rank(square)) * 80;
 
-                    brush.Color = Color.Yellow;
+                    brush.Color = Color.FromArgb(150, 255, 255, 0);
                     graphics.FillRectangle(brush, new Rectangle(screenX, screenY, 80, 80));
                 }
             }
@@ -144,7 +154,7 @@ namespace ChessEngine
                 Image img = (Image)rm.GetObject(Piece.GetPieceImageID(board[i]));
 
                 int screenX = Board.File(i) * 80;
-                int screenY = board.whiteToPlay ? (7 - Board.Rank(i)) * 80 : Board.Rank(i) * 80;
+                int screenY = (7 - Board.Rank(i)) * 80;
 
                 graphics.DrawImage(img, screenX, screenY);
             }
