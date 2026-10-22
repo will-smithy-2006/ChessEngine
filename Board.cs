@@ -1,186 +1,175 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
 using System.Linq;
-using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Resources;
+using ChessEngine.Properties;
+using System.Diagnostics;
 
-namespace ChessEngine
+namespace ChessEngineNS
 {
-    internal class Board
+    public partial class MainMenu : Form
     {
-        public const string DEFAULT_FEN_STRING = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w";
+        public static readonly string saveFilePath = "SaveFile.txt";
 
-        int playerColour;
-        int computerColour;
+        // Instance of the chess form that will be created and ran.
+        private ChessForm chess;
 
-        public int FriendlyColour => playerColour;
-        public int OpponentColour => computerColour;
+        // Variables to track the currently selected game settings.
+        private int selectedDifficulty;
+        private bool playingComputer;
+        private int playerColour;
 
-        private MoveGenerator moveGenerator;
+        private int randomisedColour;
 
-        public bool whiteToPlay;
-
-        private int[] board;
-        public int this[int i] { get { return board[i]; } } 
-
-
-
-        public Board(string fenString = DEFAULT_FEN_STRING)
+        // The class constructor initialises the game settings variables, and generates a random colour
+        // that will be the player's starting colour is they select the random option.
+        public MainMenu()
         {
-            board = GenerateBoardFromFENString(fenString);
-            moveGenerator = new MoveGenerator(this);
+            InitializeComponent();
+
+            selectedDifficulty = DifficultySlider.Value;
+            playingComputer = true;
+            playerColour = Piece.White;
+
+            Random random = new Random();
+            randomisedColour = random.Next(0, 2) == 0 ? Piece.White : Piece.Black;
         }
 
-        public int[] GenerateBoardFromFENString(string fenString)
+        // This subroutine is called when the new game button is clicked. It hides the main menu panel,
+        // then shows the new game panel, and moves it to the centre of the screen.
+        private void NewGameButton_Click(object sender, EventArgs e)
         {
-            string[] fenStringParts = fenString.Split(' ');
-            int[] board = new int[64];
+            MainMenuPanel.Hide();
 
-            int file = 0;
-            int rank = 7;
-
-            foreach (char ch in fenStringParts[0])
-            {
-                if (ch == '/') { 
-                    rank--;
-                    file = 0;
-                    continue;
-                }
-
-                if (Char.IsDigit(ch)) {
-                    file += ch - '0';
-                    continue;
-                }
-
-                int colour = (Char.IsUpper(ch)) ? Piece.White : Piece.Black;
-                int piece;
-
-                switch (Char.ToLower(ch))
-                {
-                    case 'p':
-                        piece = Piece.Pawn;
-                        break;
-                    case 'b':
-                        piece = Piece.Bishop;
-                        break;
-                    case 'n':
-                        piece = Piece.Knight;
-                        break;
-                    case 'r':
-                        piece = Piece.Rook;
-                        break;
-                    case 'q':
-                        piece = Piece.Queen;
-                        break;
-                    case 'k':
-                        piece = Piece.King;
-                        break;
-                    default:
-                        throw new InvalidDataException($"FEN String: '{fenString}', character: '{ch.ToString()}'");
-                }
-
-                board[(rank * 8) + file] = piece | colour;
-
-                file++;
-            }
-
-            whiteToPlay = (fenStringParts[1] == "w") ? true : false;
-            
-            return board;
+            NewGamePanel.Location = new Point(139, 44);
+            NewGamePanel.Show();
         }
 
-        private PieceList[] GeneratePieceListFromBoard(int pieceType, int[] board)
+        // This subroutine is called when the exit game button is clicked, and shuts the application
+        // and any forms currently open.
+        private void ExitButton_Click(object sender, EventArgs e)
         {
-            PieceList[] pieces = new PieceList[]
-                {
-                    new PieceList(),
-                    new PieceList()
-                };
+            Application.Exit();
+        }
 
-            for (int i = 0; i < board.Length; i++)
+        // This subroutine is called whenever the load game button is clicked, and will read the game's
+        // save file and load the game that is saved within this file.
+        private void LoadGameButton_Click(object sender, EventArgs e)
+        {
+            try
             {
-                if ((board[i] & Piece.Type) == pieceType)
+                // Open the game save file using a stream reader.
+                using (StreamReader sr = new StreamReader(saveFilePath))
                 {
-                    int colour = Piece.IsWhite(board[i]) ? 0 : 1;
-                    pieces[colour].AddPiece(i);
+                    // The first line of the save file is the fen string of the current position.
+                    string fenString = sr.ReadLine();
+
+                    // If this string is empty, then the save file does not contain a board state,
+                    // so exit the subroutine.
+                    if (fenString == null)
+                        return;
+
+                    // The next line is a string that indicates whether the player is facing the 
+                    // computer.
+                    bool playingComputer = sr.ReadLine() == "true" ? true : false;
+                    int difficulty = 5;
+
+                    // If the player is facing the computer, read the next integer stored within 
+                    // the file which represents the difficulty setting. Otherwise, the difficulty
+                    // will remain as five (so the player can recieve the best hints).
+                    if (playingComputer)
+                    {
+                        difficulty = Convert.ToInt32(sr.ReadLine());
+                    }
+
+                    // The next integer stored in the save file is the player's colour.
+                    int playerColour = Convert.ToInt32(sr.ReadLine());
+
+                    // Hide this form.
+                    Hide();
+
+                    // Assign the chess member variable to a new instance of the Chess Form class
+                    // passing in the values stored in the save file. Show this form.
+                    chess = new ChessForm(fenString, playingComputer, difficulty, playerColour);
+                    chess.ShowDialog();
                 }
             }
-
-            return pieces;
+            // If any errors are caught during this process, display the corresponding error message.
+            catch (Exception ex)
+            {
+                Trace.WriteLine("The save file could not be read.");
+                Trace.WriteLine($"Error Message: {ex.Message}");
+            }
         }
 
-        // Returns true if move is successful, returns false otherwise. (e.g. move is invalid)
-        public bool MakeMove(Move move)
+        // This subroutine updates the selected difficulty setting whenever, the slider is adjusted.
+        private void DifficultySlider_Scroll(object sender, EventArgs e)
         {
-            int movingPiece = board[move.StartingSquare];
-            
-            if (movingPiece == Piece.Empty)
-                return false;
-
-            board[move.StartingSquare] = Piece.Empty;
-            board[move.EndingSquare] = movingPiece;
-
-            whiteToPlay = !whiteToPlay;
-
-            return true;
+            selectedDifficulty = DifficultySlider.Value;
         }
 
-        public List<Move> GenerateValidMoves(int square)
+        // This subroutine updates the playing computer boolean, and accordingly will hide/show the 
+        // game settings panel, whenever the computer checkbox's check changes.
+        private void ComputerCheckBox_CheckedChanged(object sender, EventArgs e)
         {
-            return moveGenerator.GenerateLegalMoves(square, this);
-        }
-        public int ColourToPlay()
-        {
-            if (whiteToPlay)
-                return Piece.White;
-            return Piece.Black;
-        }
-        public int[] GetBoard()
-        {
-            return board;
+            if (!playingComputer)
+            {
+                playingComputer = true;
+                GameSettingsPanel.Show();
+
+                ColourButton_CheckedChanged(sender, e);
+            }
+            else
+            {
+                playingComputer = false;
+                GameSettingsPanel.Hide();
+
+                playerColour = Piece.White;
+            }
         }
 
-        public static int Rank(int square) {
-            return square / 8;
-        }
-        public static int File(int square) {
-            return square % 8;
-        }
-        public static int FileRankToSquare(int file, int rank)
+        // This subroutine is called whenever the start game button is clicked, and will create and 
+        // display a new chess form, using the selected game settings.
+        private void StartGameButton_Click(object sender, EventArgs e)
         {
-            return (rank * 8) + file;
+            // Hide this form.
+            Hide();
+
+            // If the player is not facing the computer, set the selected difficulty to five
+            // so that the player can recieve the best possible hint moves.
+            if (!playingComputer)
+            {
+                selectedDifficulty = 5;
+            }
+
+            // Create a new instance of the chess form, passing in the default fen string, and the other
+            // selected game settings. Show this form.
+            chess = new ChessForm(Board.DEFAULT_FEN_STRING, playingComputer, selectedDifficulty, playerColour);
+            chess.ShowDialog();
         }
-        public static bool InBoard(int square)
+
+        // This subroutine updates the user's player colour whenever the check of one of the colour checkboxes
+        // is changed.
+        private void ColourButton_CheckedChanged(object sender, EventArgs e)
         {
-            return square < 64 && square >= 0;
-        }
-        public static bool IsSameRank(int square, int otherSquare)
-        {
-            return Rank(square) == Rank(otherSquare);
-        }
-        public static bool IsSameFile(int square, int otherSquare)
-        {
-            return File(square) == File(otherSquare);
-        }
-        public static bool AreAdjacentFiles(int square, int otherSquare)
-        {
-            return Math.Abs(File(square) - File(otherSquare)) == 1;
-        }
-        public static bool AreAdjacentRanks(int square, int otherSquare)
-        {
-            return Math.Abs(Rank(square) - Rank(otherSquare)) == 1;
+            if (WhiteColourButton.Checked)
+            {
+                playerColour = Piece.White;
+            }
+            else if (BlackColourButton.Checked)
+            {
+                playerColour = Piece.Black;
+            }
+            else
+            {
+                playerColour = randomisedColour;
+            }
         }
     }
 }
-
-/*
- * 56 57 58 59 60 61 62 63
- * 48 49 50 51 52 53 54 55
- * 40 41 42 43 44 45 46 47
- * 32 33 34 35 36 37 38 39
- * 24 25 26 27 28 29 30 31
- * 16 17 18 19 20 21 22 23
- * 08 09 10 11 12 13 14 15 
- * 00 01 02 03 04 05 06 07
- */
